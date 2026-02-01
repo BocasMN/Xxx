@@ -4,7 +4,6 @@ type ReqBody = {
   input?: string
 }
 
-// Função segura para extrair texto da resposta do Gemini
 function extractText(data: any): string {
   try {
     return (
@@ -20,15 +19,10 @@ function extractText(data: any): string {
 
 export const handler: Handler = async (event) => {
   try {
-    // Só aceitar POST
     if (event.httpMethod !== 'POST') {
-      return {
-        statusCode: 405,
-        body: 'Method Not Allowed'
-      }
+      return { statusCode: 405, body: 'Method Not Allowed' }
     }
 
-    // Ler API key
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
       return {
@@ -37,41 +31,37 @@ export const handler: Handler = async (event) => {
       }
     }
 
-    // Ler body
     const body: ReqBody = event.body ? JSON.parse(event.body) : {}
     const input = (body.input || '').trim()
 
-    // Prompt oficial do Matchday Reality Engine
     const prompt = `
 Tu és o "Matchday Reality Engine".
 
 Objetivo:
-Criar uma leitura REALISTA do jogo de HOJE, usando APENAS a informação fornecida pelo utilizador.
+Criar uma leitura REALISTA do jogo de HOJE usando apenas os dados fornecidos.
 
-Regras obrigatórias:
-- Não inventar estatísticas.
-- Não usar histórico pesado.
-- Não usar regras fixas ou sistemas.
-- Não forçar decisões.
-- Linguagem natural e humana.
-- Máximo 2 Correct Scores realistas.
-- Se os dados forem fracos, assume cenário conservador.
+Regras:
+- Não inventar estatísticas
+- Não usar histórico pesado
+- Máximo 2 Correct Scores
+- Linguagem humana e realista
+- Se dados fracos → cenário conservador
 
-Formato da resposta:
+Formato:
 Cenário tático do dia:
-(texto curto e realista)
+(texto curto)
 
 Resultados mais realistas:
 - X-X
 - X-X
 
-Texto do utilizador:
-${input || '(sem dados fornecidos)'}
+Texto:
+${input || '(sem dados)'}
     `.trim()
 
-    // Endpoint correto e estável
+    // 🔴 MODELO CORRETO ATUAL
     const url =
-      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`
 
     const response = await fetch(url, {
       method: 'POST',
@@ -95,10 +85,7 @@ ${input || '(sem dados fornecidos)'}
     if (!response.ok) {
       return {
         statusCode: response.status,
-        body: JSON.stringify({
-          error: 'Gemini error',
-          details: data
-        })
+        body: JSON.stringify({ error: 'Gemini error', details: data })
       }
     }
 
@@ -106,19 +93,13 @@ ${input || '(sem dados fornecidos)'}
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: text || 'Sem resposta gerada.'
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
     }
   } catch (err: any) {
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        error: err?.message || 'Server error'
-      })
+      body: JSON.stringify({ error: err?.message || 'Server error' })
     }
   }
 }
