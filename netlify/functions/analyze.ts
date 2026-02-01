@@ -1,72 +1,63 @@
 import type { Handler } from "@netlify/functions";
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// ✅ Modelo estável e suportado
+const MODEL = "gemini-1.0-pro";
+
+// ✅ API v1 (NÃO v1beta)
+const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+
 export const handler: Handler = async (event) => {
   try {
-    // 🔐 API KEY
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    if (!GEMINI_API_KEY) {
       return {
         statusCode: 500,
         body: JSON.stringify({ error: "Missing GEMINI_API_KEY" }),
       };
     }
 
-    // 📥 TEXTO DE ENTRADA
-    const body = event.body ? JSON.parse(event.body) : {};
-    const inputText = body.text || "";
+    if (event.httpMethod !== "POST") {
+      return {
+        statusCode: 405,
+        body: JSON.stringify({ error: "Method not allowed" }),
+      };
+    }
 
-    if (!inputText.trim()) {
+    const body = JSON.parse(event.body || "{}");
+    const text = body.text;
+
+    if (!text || !text.trim()) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "No input text provided" }),
       };
     }
 
-    // ✅ ENDPOINT CORRETO (FUNCIONA)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    // 🧠 PROMPT – Matchday Reality Engine
-    const payload = {
-      contents: [
-        {
-          parts: [
-            {
-              text: `
+    const prompt = `
 És um analista profissional de futebol.
-Analisa os dados abaixo com realismo, sem exageros e sem inventar estatísticas.
+Analisa os dados abaixo e cria uma leitura REALISTA do jogo de hoje.
+Inclui:
+- cenário tático
+- ritmo esperado
+- resultados mais prováveis (máx 2)
 
-Objetivo:
-- Ler o contexto do jogo
-- Identificar o cenário tático mais provável
-- Indicar APENAS 2 resultados finais realistas (Correct Score)
+DADOS:
+${text}
+`;
 
-Formato da resposta (obrigatório):
-
-Cenário tático do dia:
-<descrição curta e objetiva>
-
-Resultados mais realistas:
-- X-X
-- X-X
-
-Dados:
-${inputText}
-              `.trim(),
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.6,
-        maxOutputTokens: 200,
-      },
-    };
-
-    // 🌐 CHAMADA À API
-    const response = await fetch(url, {
+    const response = await fetch(API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }],
+          },
+        ],
+      }),
     });
 
     const data = await response.json();
@@ -81,19 +72,19 @@ ${inputText}
       };
     }
 
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+    const output =
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
       "Sem resposta do modelo.";
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text: output }),
     };
   } catch (err: any) {
     return {
       statusCode: 500,
       body: JSON.stringify({
-        error: "Internal error",
+        error: "Internal server error",
         message: err.message,
       }),
     };
