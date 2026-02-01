@@ -1,108 +1,124 @@
 import type { Handler } from '@netlify/functions'
 
-type AnalyzeReq = {
+type ReqBody = {
   input?: string
 }
 
-function pickText(data: any): string {
-  const parts = data?.candidates?.[0]?.content?.parts
-  if (Array.isArray(parts)) return parts.map((p: any) => p?.text).filter(Boolean).join('')
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+// Função segura para extrair texto da resposta do Gemini
+function extractText(data: any): string {
+  try {
+    return (
+      data?.candidates?.[0]?.content?.parts
+        ?.map((p: any) => p?.text)
+        .filter(Boolean)
+        .join('') || ''
+    )
+  } catch {
+    return ''
+  }
 }
 
 export const handler: Handler = async (event) => {
   try {
+    // Só aceitar POST
     if (event.httpMethod !== 'POST') {
-      return { statusCode: 405, body: 'Method Not Allowed' }
+      return {
+        statusCode: 405,
+        body: 'Method Not Allowed'
+      }
     }
 
+    // Ler API key
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'Missing GEMINI_API_KEY' }) }
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Missing GEMINI_API_KEY' })
+      }
     }
 
-    const body: AnalyzeReq = event.body ? JSON.parse(event.body) : {}
+    // Ler body
+    const body: ReqBody = event.body ? JSON.parse(event.body) : {}
     const input = (body.input || '').trim()
 
-    const systemPrompt = `
+    // Prompt oficial do Matchday Reality Engine
+    const prompt = `
 Tu és o "Matchday Reality Engine".
-Baseia-te APENAS no texto fornecido pelo utilizador (dados de hoje).
-Não inventes estatísticas ou factos que não estejam no texto.
 
-Objetivo de saída (em PORTUGUÊS):
-Devolve um JSON com esta estrutura EXATA:
-{
-  "tactical": "parágrafo curto (3-6 linhas)",
-  "factors": ["3 a 6 bullets curtos e concretos (sem inventar)"],
-  "realisticResults": [
-    {"score":"1-0","label":"CENÁRIO BASE","why":"1-2 frases"},
-    {"score":"0-0","label":"CENÁRIO ALTERNATIVO","why":"1-2 frases"}
-  ]
-}
+Objetivo:
+Criar uma leitura REALISTA do jogo de HOJE, usando APENAS a informação fornecida pelo utilizador.
 
-Regras:
-- "realisticResults" deve ter no máximo 2 itens.
-- Se não houver dados suficientes, assume um jogo conservador e diz o que faltou em "factors".
-- Não uses palavreado de tipster. Sê realista, técnico e simples.
+Regras obrigatórias:
+- Não inventar estatísticas.
+- Não usar histórico pesado.
+- Não usar regras fixas ou sistemas.
+- Não forçar decisões.
+- Linguagem natural e humana.
+- Máximo 2 Correct Scores realistas.
+- Se os dados forem fracos, assume cenário conservador.
+
+Formato da resposta:
+Cenário tático do dia:
+(texto curto e realista)
+
+Resultados mais realistas:
+- X-X
+- X-X
+
+Texto do utilizador:
+${input || '(sem dados fornecidos)'}
     `.trim()
 
-    const userText = input || '(sem texto)'
-    const prompt = `${systemPrompt}\n\nTEXTO DO UTILIZADOR:\n${userText}`
+    // Endpoint correto e estável
+    const url =
+      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${apiKey}`
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
-
-    const geminiRes = await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 700
+          maxOutputTokens: 400
         }
       })
     })
 
-    const data = await geminiRes.json()
+    const data = await response.json()
 
-    if (!geminiRes.ok) {
+    if (!response.ok) {
       return {
-        statusCode: geminiRes.status,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Gemini error', details: data })
-      }
-    }
-
-    const raw = pickText(data).trim()
-
-    // Gemini vai devolver JSON em texto; tentamos parse.
-    let parsed: any = null
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      // fallback: devolve texto cru
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
+        statusCode: response.status,
         body: JSON.stringify({
-          tactical: raw,
-          factors: ['Saída não veio em JSON. Ajustar prompt se necessário.'],
-          realisticResults: [{ score: '1-0', label: 'CENÁRIO BASE', why: 'Fallback conservador.' }]
+          error: 'Gemini error',
+          details: data
         })
       }
     }
 
-    // Normalização mínima
-    const tactical = String(parsed?.tactical || '').trim()
-    const factors = Array.isArray(parsed?.factors) ? parsed.factors.map((x: any) => String(x)) : []
-    const realisticResults = Array.isArray(parsed?.realisticResults) ? parsed.realisticResults.slice(0, 2) : []
+    const text = extractText(data)
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tactical, factors, realisticResults })
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: text || 'Sem resposta gerada.'
+      })
     }
   } catch (err: any) {
-    return { statusCode: 500, body: JSON.stringify({ error: err?.message || 'Server error' }) }
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        error: err?.message || 'Server error'
+      })
+    }
   }
 }
