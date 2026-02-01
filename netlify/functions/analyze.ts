@@ -2,11 +2,11 @@ import type { Handler } from "@netlify/functions";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// ✅ Modelo estável e suportado
-const MODEL = "gemini-1.0-pro";
+// ✅ MODELO ATUAL E SUPORTADO
+const MODEL = "gemini-1.5-flash";
 
-// ✅ API v1 (NÃO v1beta)
-const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+// ✅ API v1beta (OBRIGATÓRIO)
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 export const handler: Handler = async (event) => {
   try {
@@ -36,11 +36,12 @@ export const handler: Handler = async (event) => {
 
     const prompt = `
 És um analista profissional de futebol.
-Analisa os dados abaixo e cria uma leitura REALISTA do jogo de hoje.
+Cria uma análise REALISTA do jogo com base nos dados.
+
 Inclui:
-- cenário tático
-- ritmo esperado
-- resultados mais prováveis (máx 2)
+- Cenário tático
+- Ritmo do jogo
+- Máximo 2 resultados prováveis
 
 DADOS:
 ${text}
